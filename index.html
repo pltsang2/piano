@@ -3,93 +3,284 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>眼動儀鋼琴 (WebGazer版)</title>
-    <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
+    <title>精準眼控琴 (防分心版)</title>
     <style>
-        body { margin: 0; padding: 0; background: #000; overflow: hidden; font-family: Arial, sans-serif; display: flex; flex-direction: column; }
+        body { margin: 0; background: #222; overflow: hidden; font-family: "Microsoft JhengHei", sans-serif; }
         
-        #piano-container { display: flex; height: 100vh; width: 100vw; }
-        .key { flex: 1; border-right: 2px solid #000; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 30px; box-sizing: border-box; }
-        .key span { font-size: 2rem; font-weight: bold; pointer-events: none; }
-        .key.active { filter: brightness(1.5); box-shadow: inset 0 0 50px white; }
+        #piano { display: flex; height: 100vh; width: 100vw; }
+        
+        .key { 
+            flex: 1; border-right: 1px solid #000; position: relative;
+            display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+            padding-bottom: 20px; box-sizing: border-box; background: #444; 
+        }
+        
+        /* 琴鍵文字 */
+        .key span { font-size: 1.2rem; font-weight: bold; color: rgba(0,0,0,0.5); pointer-events: none; margin-bottom: 5px; }
+        .key-note { font-size: 1.8rem !important; color: #000 !important; }
 
-        /* 為了讓校準更容易，我們做一個覆蓋層 */
-        #calibration-overlay {
-            position: absolute; top: 10px; left: 10px; z-index: 1000;
-            background: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 10px;
+        /* 琴鍵顏色 */
+        .key:nth-child(odd) { background: #e0e0e0; }
+        .key:nth-child(even) { background: #f5f5f5; }
+        /* 為了高對比，我們還是用彩虹色，但加強一點 */
+        .key:nth-child(1) { background: #FF9999; } 
+        .key:nth-child(2) { background: #FFCC99; }
+        .key:nth-child(3) { background: #FFFF99; }
+        .key:nth-child(4) { background: #99FF99; }
+        .key:nth-child(5) { background: #99CCFF; }
+        .key:nth-child(6) { background: #CC99FF; }
+        .key:nth-child(7) { background: #FF99FF; }
+        .key:nth-child(8) { background: #FF4D4D; }
+
+        .key.active { 
+            filter: brightness(1.2); transform: scaleY(0.98); 
+            box-shadow: inset 0 -10px 20px rgba(0,0,0,0.2);
+        }
+
+        /* 游標 */
+        #cursor {
+            position: absolute; top: 50%; left: 50%;
+            width: 40px; height: 40px;
+            background: rgba(0, 255, 0, 0.8); /* 綠色代表OK */
+            border: 3px solid #fff; border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 50; box-shadow: 0 0 15px #00FF00;
+            transition: left 0.1s ease-out, top 0.1s ease-out, background 0.2s;
+            display: flex; justify-content: center; align-items: center;
+            color: white; font-weight: bold; font-size: 20px;
+        }
+        /* 當不專注時的游標樣式 */
+        #cursor.inactive {
+            background: rgba(100, 100, 100, 0.5) !important;
+            border-color: #555;
+            box-shadow: none;
+        }
+        #cursor.playing { background: #FF0000; width: 50px; height: 50px; }
+
+        /* 面板 */
+        #panel {
+            position: absolute; bottom: 20px; left: 20px; 
+            background: rgba(0,0,0,0.9); color: white; padding: 15px;
+            border-radius: 10px; z-index: 100; width: 300px;
+        }
+        button {
+            padding: 10px; width: 100%; font-size: 1.1rem; 
+            background: #FFD700; border: none; border-radius: 5px; cursor: pointer;
+            margin-bottom: 10px;
+        }
+        label { display: block; margin: 8px 0 2px; font-size: 0.9rem;}
+        input[type=range] { width: 100%; }
+        
+        #cam-preview {
+            position: absolute; bottom: 20px; right: 20px;
+            width: 160px; height: 120px; background: #000; 
+            border: 3px solid #333; transform: scaleX(-1); opacity: 0.9; z-index: 100;
+        }
+        /* 狀態指示燈 (在預覽視窗上) */
+        #face-status {
+            position: absolute; bottom: 125px; right: 20px;
+            color: white; background: red; padding: 2px 8px; font-size: 12px; z-index: 101;
         }
     </style>
 </head>
 <body>
-    <div id="calibration-overlay">
-        <h3>校準說明：</h3>
-        <p>1. 請允許開啟攝影機。</p>
-        <p>2. 請在螢幕上不同位置(左/中/右)點擊滑鼠，同時眼睛盯著游標。</p>
-        <p>3. 點擊越多次，紅色預測點會越準確。</p>
-        <button onclick="webgazer.clearData()">清除校準重來</button>
+
+    <div id="panel">
+        <button id="startBtn" onclick="init()">啟動相機</button>
+        <div id="msg" style="color:yellow;">點擊上方按鈕開始</div>
+        <hr style="border-color:#555">
+        
+        <label>🎹 靈敏度 (Sensitivity): <span id="val-sens">2.5</span></label>
+        <input type="range" id="sensitivity" min="1" max="5" step="0.1" value="2.5">
+        
+        <label>🧐 嚴格度 (容許轉頭的程度): <span id="val-strict">0.6</span></label>
+        <input type="range" id="strictness" min="0.1" max="1.5" step="0.1" value="0.6">
+        <div style="font-size: 0.8rem; color: #aaa;">數值越小，頭必須越正才會有聲音。</div>
     </div>
 
-    <div id="piano-container">
-        <div class="key" style="background-color: #FF4D4D;" data-freq="261.63"><span>Do</span></div>
-        <div class="key" style="background-color: #FFFA65;" data-freq="329.63"><span>Mi</span></div>
-        <div class="key" style="background-color: #32FF7E;" data-freq="392.00"><span>Sol</span></div>
-        <div class="key" style="background-color: #18DCFF;" data-freq="523.25"><span>Do'</span></div>
-        <div class="key" style="background-color: #C56CF0;" data-freq="659.25"><span>Mi'</span></div>
+    <div id="face-status">未偵測</div>
+    <video id="cam-preview" autoplay playsinline muted></video>
+    <video id="hidden-video" autoplay playsinline muted style="opacity:0; position:absolute; top:0; pointer-events:none;"></video>
+
+    <div id="cursor"></div>
+
+    <div id="piano">
+        <div class="key" data-f="261.63"><span class="key-note">Do</span><span>C4</span></div>
+        <div class="key" data-f="293.66"><span class="key-note">Re</span><span>D4</span></div>
+        <div class="key" data-f="329.63"><span class="key-note">Mi</span><span>E4</span></div>
+        <div class="key" data-f="349.23"><span class="key-note">Fa</span><span>F4</span></div>
+        <div class="key" data-f="392.00"><span class="key-note">Sol</span><span>G4</span></div>
+        <div class="key" data-f="440.00"><span class="key-note">La</span><span>A4</span></div>
+        <div class="key" data-f="493.88"><span class="key-note">Si</span><span>B4</span></div>
+        <div class="key" data-f="523.25"><span class="key-note">Do</span><span>C5</span></div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <script>
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        let audioCtx = new AudioContext();
-        let currentKey = null;
-        let playTimer = null;
+        const video = document.getElementById('hidden-video');
+        const preview = document.getElementById('cam-preview');
+        const cursor = document.getElementById('cursor');
+        const statusLabel = document.getElementById('face-status');
+        let audioCtx;
 
-        function playTone(freq) {
-            if(audioCtx.state === 'suspended') audioCtx.resume();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'triangle';
-            osc.frequency.value = freq;
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.1);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.0);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 1.0);
+        let sensitivity = 2.5;
+        let strictness = 0.6; // 嚴格度閾值
+        let smoothing = 0.85;
+
+        let currentX = window.innerWidth / 2;
+        let targetX = window.innerWidth / 2;
+        let isFaceValid = false; // 是否「正視」螢幕
+
+        // UI 綁定
+        document.getElementById('sensitivity').oninput = (e) => {
+            sensitivity = parseFloat(e.target.value);
+            document.getElementById('val-sens').innerText = sensitivity;
+        };
+        document.getElementById('strictness').oninput = (e) => {
+            strictness = parseFloat(e.target.value);
+            document.getElementById('val-strict').innerText = strictness;
+        };
+
+        async function init() {
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('msg').innerText = "載入模型中...";
+            
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            // 解鎖音效
+            const b = audioCtx.createBuffer(1, 1, 22050);
+            const s = audioCtx.createBufferSource(); s.buffer = b; s.connect(audioCtx.destination); s.start(0);
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width:640, height:480 } });
+                video.srcObject = stream;
+                preview.srcObject = stream;
+
+                const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+                faceMesh.setOptions({ maxNumFaces: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+                faceMesh.onResults(onResults);
+
+                video.onloadeddata = () => {
+                    const loop = async () => { await faceMesh.send({image: video}); requestAnimationFrame(loop); };
+                    loop();
+                    document.getElementById('msg').innerText = "✅ 運作中 - 請保持正視螢幕";
+                    document.getElementById('startBtn').style.display = 'none';
+                };
+            } catch (e) { alert("相機錯誤: " + e); }
         }
 
-        // WebGazer 設定
-        window.onload = async function() {
-            await webgazer.setRegression('ridge') 
-                .setGazeListener(function(data, clock) {
-                    if (data == null) return;
-                    
-                    // data.x 和 data.y 是預測的眼球注視座標
-                    const x = data.x;
-                    const y = data.y;
+        function onResults(results) {
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const mesh = results.multiFaceLandmarks[0];
+                
+                // 1. 取得關鍵點
+                const nose = mesh[1]; // 鼻尖
+                const leftEyeOuter = mesh[33];  // 左眼角
+                const rightEyeOuter = mesh[263]; // 右眼角
+                
+                // 2. 計算臉部轉向 (Yaw) - 利用鼻子與兩眼角的相對距離
+                // 如果鼻子正中間，noseToLeft 應該等於 noseToRight
+                const noseToLeft = Math.abs(nose.x - leftEyeOuter.x);
+                const noseToRight = Math.abs(nose.x - rightEyeOuter.x);
+                const ratio = noseToLeft / (noseToRight + 0.0001); // 避免除以0
 
-                    // 判斷落在哪個琴鍵
-                    const element = document.elementFromPoint(x, window.innerHeight / 2); // 只看 X 軸，Y 軸鎖定在中間
-                    const key = element ? element.closest('.key') : null;
+                // 3. 判斷是否「正視」
+                // 完美正視 ratio 為 1。如果轉頭，ratio 會變成 0.2 或 5.0
+                // strictness 控制這個容許範圍 (例如 0.5 ~ 2.0)
+                // 另外加一個 Pitch 判斷 (鼻子不能比眼睛高太多，避免仰頭)
+                
+                // 簡化判斷：差值比例
+                const diff = Math.abs(noseToLeft - noseToRight);
+                const width = noseToLeft + noseToRight;
+                const turnFactor = diff / width; // 0 = 正中, 1 = 極度側面
 
-                    if (key && key !== currentKey) {
-                        if (currentKey) currentKey.classList.remove('active');
-                        currentKey = key;
-                        currentKey.classList.add('active');
-                        
-                        // 觸發聲音 (加一點延遲避免亂飄)
-                        if(playTimer) clearTimeout(playTimer);
-                        playTimer = setTimeout(() => {
-                            const freq = currentKey.getAttribute('data-freq');
-                            playTone(parseFloat(freq));
-                        }, 200); // 停留200毫秒才響
-                    }
-                })
-                .begin();
+                if (turnFactor < strictness) {
+                    // --- 合格：臉是正的 ---
+                    isFaceValid = true;
+                    statusLabel.innerText = "🟢 鎖定中";
+                    statusLabel.style.background = "green";
+                    cursor.classList.remove('inactive');
+                    cursor.innerText = "";
+                } else {
+                    // --- 不合格：臉轉開了 ---
+                    isFaceValid = false;
+                    statusLabel.innerText = "🔴 請看螢幕";
+                    statusLabel.style.background = "red";
+                    cursor.classList.add('inactive');
+                    cursor.innerText = "❌";
+                }
 
-            // 開啟預覽點 (紅點)
-            webgazer.showPredictionPoints(true); 
-        };
+                // 4. 計算游標位置 (即使沒正視也計算，但視覺上變灰)
+                let rawX = (1 - nose.x) * window.innerWidth;
+                let centerX = window.innerWidth / 2;
+                let adjustedX = centerX + (rawX - centerX) * sensitivity;
+                
+                if (adjustedX < 0) adjustedX = 0;
+                if (adjustedX > window.innerWidth) adjustedX = window.innerWidth;
+
+                targetX = adjustedX;
+
+            } else {
+                isFaceValid = false;
+                statusLabel.innerText = "未偵測到臉";
+            }
+
+            // 平滑移動
+            currentX = currentX * smoothing + targetX * (1 - smoothing);
+            cursor.style.left = currentX + 'px';
+
+            // 只有在臉部有效時，才觸發琴鍵
+            if (isFaceValid) {
+                checkCollision(currentX);
+            } else {
+                // 如果臉不正，清除所有按鍵狀態
+                if (lastKey) lastKey.classList.remove('active');
+                lastKey = null;
+                cursor.classList.remove('playing');
+            }
+        }
+
+        let lastKey = null;
+        let playTimer = null;
+
+        function checkCollision(x) {
+            const element = document.elementFromPoint(x, window.innerHeight / 2);
+            const key = element ? element.closest('.key') : null;
+
+            if (key !== lastKey) {
+                if (lastKey) lastKey.classList.remove('active');
+                if (playTimer) clearTimeout(playTimer);
+                cursor.classList.remove('playing');
+
+                lastKey = key;
+
+                if (key) {
+                    key.classList.add('active');
+                    // 停留 100ms 才發聲，避免快速掃過
+                    playTimer = setTimeout(() => {
+                        if (isFaceValid) { // 再次確認臉還是正的
+                            playNote(parseFloat(key.dataset.f));
+                            cursor.classList.add('playing');
+                        }
+                    }, 100);
+                }
+            }
+        }
+
+        function playNote(freq) {
+            if(!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            // 使用 Triangle 波，比較像長笛/柔和琴聲
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            
+            g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.5, audioCtx.currentTime + 0.1);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.2);
+            
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + 1.2);
+        }
     </script>
 </body>
 </html>
