@@ -2,315 +2,94 @@
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>攝影鏡頭電子琴 (8鍵)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>眼動儀鋼琴 (WebGazer版)</title>
+    <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
     <style>
-        /* 全螢幕設定 */
-        body { 
-            margin: 0; padding: 0; 
-            background: #000; 
-            overflow: hidden; 
-            font-family: Arial, sans-serif;
-            touch-action: none; 
-            -webkit-user-select: none;
-            user-select: none;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-        }
-
-        /* 琴鍵容器 */
-        #piano-container {
-            display: flex;
-            height: 100vh;
-            width: 100vw;
-            position: relative; /* 為了游標定位 */
-        }
-
-        /* 單個琴鍵樣式 */
-        .key {
-            flex: 1;
-            border-right: 2px solid #000;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-end;
-            padding-bottom: 30px;
-            cursor: default; /* 不像點擊模式有 pointer */
-            transition: background-color 0.1s;
-            position: relative;
-        }
-
-        /* 琴鍵上的文字 */
-        .key span {
-            font-size: 2.5rem;
-            font-weight: bold;
-            color: rgba(0,0,0,0.6);
-            pointer-events: none; /* 讓點擊穿透文字 */
-        }
+        body { margin: 0; padding: 0; background: #000; overflow: hidden; font-family: Arial, sans-serif; display: flex; flex-direction: column; }
         
-        .note-name { font-size: 3rem !important; color: #000 !important; }
+        #piano-container { display: flex; height: 100vh; width: 100vw; }
+        .key { flex: 1; border-right: 2px solid #000; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 30px; box-sizing: border-box; }
+        .key span { font-size: 2rem; font-weight: bold; pointer-events: none; }
+        .key.active { filter: brightness(1.5); box-shadow: inset 0 0 50px white; }
 
-        /* 當游標懸停時的視覺效果 */
-        .key.hovered {
-            filter: brightness(1.5);
-            box-shadow: inset 0 0 50px rgba(255,255,255,0.8);
-        }
-
-        /* 游標 */
-        #cursor {
-            position: absolute;
-            width: 80px; /* 游標大小 */
-            height: 80px;
-            background-color: rgba(255, 255, 255, 0.7);
-            border-radius: 50%;
-            border: 5px solid rgba(0, 0, 0, 0.5);
-            pointer-events: none; /* 不會阻擋事件 */
-            z-index: 10;
-            transform: translate(-50%, -50%); /* 讓游標中心點對準座標 */
-            transition: background-color 0.1s;
-        }
-
-        /* 游標觸發時的樣式 */
-        #cursor.playing {
-            background-color: rgba(255, 0, 0, 0.8);
-            transform: translate(-50%, -50%) scale(1.2);
-        }
-
-        /* 啟動按鈕和狀態訊息 */
-        #overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9);
-            display: flex; justify-content: center; align-items: center;
-            flex-direction: column;
-            z-index: 100;
-        }
-        #start-btn {
-            padding: 20px 40px; font-size: 2rem;
-            background: #FFD700; border: none; border-radius: 20px;
-            cursor: pointer;
-        }
-        #status-message {
-            color: white; font-size: 1.5rem; margin-top: 20px;
-        }
-
-        /* 影片元素 (隱藏，用於 MediaPipe 處理) */
-        #video-feed {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 1px; /* 盡量隱藏 */
-            height: 1px;
-            opacity: 0;
-            pointer-events: none;
-            z-index: -1;
+        /* 為了讓校準更容易，我們做一個覆蓋層 */
+        #calibration-overlay {
+            position: absolute; top: 10px; left: 10px; z-index: 1000;
+            background: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 10px;
         }
     </style>
 </head>
 <body>
-
-    <div id="overlay">
-        <button id="start-btn">點擊開始 (開啟攝影機)</button>
-        <div id="status-message">載入中...</div>
+    <div id="calibration-overlay">
+        <h3>校準說明：</h3>
+        <p>1. 請允許開啟攝影機。</p>
+        <p>2. 請在螢幕上不同位置(左/中/右)點擊滑鼠，同時眼睛盯著游標。</p>
+        <p>3. 點擊越多次，紅色預測點會越準確。</p>
+        <button onclick="webgazer.clearData()">清除校準重來</button>
     </div>
 
     <div id="piano-container">
-        <div class="key" style="background-color: #FF4D4D;" data-note="C4" data-freq="261.63">
-            <span class="note-name">Do</span><span>C</span>
-        </div>
-        <div class="key" style="background-color: #FFAF40;" data-note="D4" data-freq="293.66">
-            <span class="note-name">Re</span><span>D</span>
-        </div>
-        <div class="key" style="background-color: #FFFA65;" data-note="E4" data-freq="329.63">
-            <span class="note-name">Mi</span><span>E</span>
-        </div>
-        <div class="key" style="background-color: #32FF7E;" data-note="F4" data-freq="349.23">
-            <span class="note-name">Fa</span><span>F</span>
-        </div>
-        <div class="key" style="background-color: #7EFFF5;" data-note="G4" data-freq="392.00">
-            <span class="note-name">Sol</span><span>G</span>
-        </div>
-        <div class="key" style="background-color: #18DCFF;" data-note="A4" data-freq="440.00">
-            <span class="note-name">La</span><span>A</span>
-        </div>
-        <div class="key" style="background-color: #C56CF0;" data-note="B4" data-freq="493.88">
-            <span class="note-name">Si</span><span>B</span>
-        </div>
-        <div class="key" style="background-color: #FF3838;" data-note="C5" data-freq="523.25">
-            <span class="note-name">Do</span><span>C'</span>
-        </div>
+        <div class="key" style="background-color: #FF4D4D;" data-freq="261.63"><span>Do</span></div>
+        <div class="key" style="background-color: #FFFA65;" data-freq="329.63"><span>Mi</span></div>
+        <div class="key" style="background-color: #32FF7E;" data-freq="392.00"><span>Sol</span></div>
+        <div class="key" style="background-color: #18DCFF;" data-freq="523.25"><span>Do'</span></div>
+        <div class="key" style="background-color: #C56CF0;" data-freq="659.25"><span>Mi'</span></div>
     </div>
-    
-    <div id="cursor"></div>
-
-    <video id="video-feed" autoplay playsinline></video>
-
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
 
     <script>
-        // --- Audio Context 設定 (同上一個版本) ---
         const AudioContext = window.AudioContext || window.webkitAudioContext;
-        let audioCtx;
+        let audioCtx = new AudioContext();
+        let currentKey = null;
+        let playTimer = null;
 
         function playTone(freq) {
-            if (!audioCtx) return;
-            
+            if(audioCtx.state === 'suspended') audioCtx.resume();
             const osc = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-
-            osc.type = 'triangle'; // 柔和的鋼琴電子琴音色
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
             osc.frequency.value = freq;
-
-            gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-            gainNode.gain.linearRampToValueAtTime(0.6, audioCtx.currentTime + 0.05);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.5);
-            
-            osc.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.1);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.0);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
             osc.start();
-            osc.stop(audioCtx.currentTime + 1.5);
+            osc.stop(audioCtx.currentTime + 1.0);
         }
 
-        // --- 攝影機與 MediaPipe 設定 ---
-        const videoElement = document.getElementById('video-feed');
-        const overlay = document.getElementById('overlay');
-        const startBtn = document.getElementById('start-btn');
-        const statusMessage = document.getElementById('status-message');
-        const cursor = document.getElementById('cursor');
-        const pianoContainer = document.getElementById('piano-container');
-        const keys = document.querySelectorAll('.key');
+        // WebGazer 設定
+        window.onload = async function() {
+            await webgazer.setRegression('ridge') 
+                .setGazeListener(function(data, clock) {
+                    if (data == null) return;
+                    
+                    // data.x 和 data.y 是預測的眼球注視座標
+                    const x = data.x;
+                    const y = data.y;
 
-        let currentHoveredKey = null;
-        let playTimer = null; // 用於計時自動播放
-        const activationDelay = 800; // 游標停留 800 毫秒後播放 (可調整)
-        
-        // 初始化 MediaPipe Face Mesh
-        const faceMesh = new FaceMesh({locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`;
-        }});
+                    // 判斷落在哪個琴鍵
+                    const element = document.elementFromPoint(x, window.innerHeight / 2); // 只看 X 軸，Y 軸鎖定在中間
+                    const key = element ? element.closest('.key') : null;
 
-        faceMesh.setOptions({
-            maxNumFaces: 1, // 只偵測一張臉
-            refineLandmarks: false,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-
-        faceMesh.onResults(onResults);
-
-        startBtn.addEventListener('click', async () => {
-            statusMessage.textContent = '正在啟動攝影機及載入模型...';
-            startBtn.disabled = true;
-
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: "user", // 前鏡頭
-                        width: { ideal: 640 }, 
-                        height: { ideal: 480 } 
-                    } 
-                });
-                videoElement.srcObject = stream;
-                await videoElement.play();
-
-                statusMessage.textContent = '模型載入中，請稍候...';
-                // 必須等待模型載入完成
-                await faceMesh.send({image: videoElement}); 
-                
-                // 啟動 AudioContext (在用戶點擊後才行)
-                audioCtx = new AudioContext();
-                const buffer = audioCtx.createBuffer(1, 1, 22050);
-                const source = audioCtx.createBufferSource();
-                source.buffer = buffer;
-                source.connect(audioCtx.destination);
-                source.start(0);
-
-                overlay.style.display = 'none'; // 隱藏啟動畫面
-                cursor.style.display = 'block'; // 顯示游標
-                
-                // 開始連續處理影片幀
-                sendVideoToFaceMesh();
-
-            } catch (err) {
-                statusMessage.textContent = `無法啟動攝影機或載入模型：${err.message} (請檢查權限或嘗試重新整理)`;
-                startBtn.disabled = false;
-            }
-        });
-
-        async function sendVideoToFaceMesh() {
-            if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-                await faceMesh.send({image: videoElement});
-            }
-            requestAnimationFrame(sendVideoToFaceMesh);
-        }
-
-        function onResults(results) {
-            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                // 取得臉部中心點 (通常是第 5 號點，即鼻尖點)
-                // 或者用所有點的平均值，這裡取最簡單的 (鼻尖)
-                const landmark = results.multiFaceLandmarks[0][5]; // 鼻尖點
-
-                // 將 MediaPipe 的正規化座標 (0-1) 轉換為螢幕像素座標
-                let cursorX = landmark.x * window.innerWidth;
-                let cursorY = landmark.y * window.innerHeight;
-
-                // 鏡頭通常是鏡像的，所以 X 軸需要反轉，這樣頭往左移，游標才往左移
-                cursorX = window.innerWidth - cursorX;
-
-                // 更新游標位置
-                cursor.style.left = `${cursorX}px`;
-                cursor.style.top = `${cursorY}px`;
-
-                // 判斷游標落在哪個琴鍵上
-                const elementUnderCursor = document.elementFromPoint(cursorX, cursorY);
-                const newHoveredKey = elementUnderCursor ? elementUnderCursor.closest('.key') : null;
-
-                if (newHoveredKey !== currentHoveredKey) {
-                    // 游標移動到新的琴鍵，或離開琴鍵
-                    if (currentHoveredKey) {
-                        currentHoveredKey.classList.remove('hovered');
-                    }
-                    if (playTimer) {
-                        clearTimeout(playTimer);
-                        playTimer = null;
-                        cursor.classList.remove('playing');
-                    }
-
-                    currentHoveredKey = newHoveredKey;
-
-                    if (currentHoveredKey) {
-                        currentHoveredKey.classList.add('hovered');
-                        // 設定計時器，如果游標停留超過 activationDelay 就播放聲音
+                    if (key && key !== currentKey) {
+                        if (currentKey) currentKey.classList.remove('active');
+                        currentKey = key;
+                        currentKey.classList.add('active');
+                        
+                        // 觸發聲音 (加一點延遲避免亂飄)
+                        if(playTimer) clearTimeout(playTimer);
                         playTimer = setTimeout(() => {
-                            const freq = currentHoveredKey.getAttribute('data-freq');
+                            const freq = currentKey.getAttribute('data-freq');
                             playTone(parseFloat(freq));
-                            cursor.classList.add('playing'); // 游標變色
-                        }, activationDelay);
+                        }, 200); // 停留200毫秒才響
                     }
-                } else if (currentHoveredKey && playTimer && !cursor.classList.contains('playing')) {
-                    // 如果在同一個琴鍵上，且計時器還在跑，但聲音還沒觸發，表示正在等待
-                    // 可以這裡加一個視覺進度條之類的
-                }
-            } else {
-                // 沒有偵測到臉部
-                if (currentHoveredKey) {
-                    currentHoveredKey.classList.remove('hovered');
-                    currentHoveredKey = null;
-                }
-                if (playTimer) {
-                    clearTimeout(playTimer);
-                    playTimer = null;
-                    cursor.classList.remove('playing');
-                }
-                cursor.classList.remove('playing');
-            }
-        }
-        
-        // 初始狀態訊息
-        statusMessage.textContent = '請點擊按鈕啟動。';
+                })
+                .begin();
 
+            // 開啟預覽點 (紅點)
+            webgazer.showPredictionPoints(true); 
+        };
     </script>
 </body>
 </html>
