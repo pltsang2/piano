@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>彩虹電子琴</title>
+    <style>
+        /* 基礎設定：禁止頁面縮放與捲動 */
+        body { 
+            margin: 0; 
+            padding: 0; 
+            background: #000; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif;
+            touch-action: none; /* 禁止瀏覽器預設觸控行為 */
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* 琴鍵容器 */
+        #piano-container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* 單個琴鍵樣式 */
+        .key {
+            flex: 1;
+            border-right: 2px solid #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end; /*文字在下方*/
+            padding-bottom: 30px;
+            cursor: pointer;
+            transition: background-color 0.1s;
+            position: relative;
+        }
+
+        /* 琴鍵上的文字 */
+        .key span {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: rgba(0,0,0,0.6);
+            pointer-events: none; /* 讓點擊穿透文字 */
+        }
+        
+        .note-name { font-size: 3rem !important; color: #000 !important; }
+
+        /* 按下時的視覺效果 */
+        .key.active {
+            filter: brightness(1.5); /* 變亮 */
+            box-shadow: inset 0 0 50px rgba(255,255,255,0.8);
+        }
+
+        /* 開始按鈕 */
+        #start-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex; justify-content: center; align-items: center;
+            z-index: 100;
+        }
+        #start-btn {
+            padding: 20px 40px; font-size: 2rem;
+            background: #FFD700; border: none; border-radius: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-overlay">
+        <button id="start-btn">點擊開始彈奏</button>
+    </div>
+
+    <div id="piano-container">
+        <div class="key" style="background-color: #FF4D4D;" data-note="C4" data-freq="261.63">
+            <span class="note-name">Do</span><span>C</span>
+        </div>
+        <div class="key" style="background-color: #FFAF40;" data-note="D4" data-freq="293.66">
+            <span class="note-name">Re</span><span>D</span>
+        </div>
+        <div class="key" style="background-color: #FFFA65;" data-note="E4" data-freq="329.63">
+            <span class="note-name">Mi</span><span>E</span>
+        </div>
+        <div class="key" style="background-color: #32FF7E;" data-note="F4" data-freq="349.23">
+            <span class="note-name">Fa</span><span>F</span>
+        </div>
+        <div class="key" style="background-color: #7EFFF5;" data-note="G4" data-freq="392.00">
+            <span class="note-name">Sol</span><span>G</span>
+        </div>
+        <div class="key" style="background-color: #18DCFF;" data-note="A4" data-freq="440.00">
+            <span class="note-name">La</span><span>A</span>
+        </div>
+        <div class="key" style="background-color: #C56CF0;" data-note="B4" data-freq="493.88">
+            <span class="note-name">Si</span><span>B</span>
+        </div>
+        <div class="key" style="background-color: #FF3838;" data-note="C5" data-freq="523.25">
+            <span class="note-name">Do</span><span>C'</span>
+        </div>
+    </div>
+
+    <script>
+        // 初始化 AudioContext
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+
+        // 聲音合成器函數
+        function playTone(freq) {
+            if (!audioCtx) return;
+            
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            // 設定波形：'triangle' 三角波聲音比較柔和，類似木管/長笛
+            // 'sawtooth' 鋸齒波比較像電子琴/銅管
+            osc.type = 'triangle'; 
+            osc.frequency.value = freq;
+
+            // 音量包絡線 (Envelope)：讓聲音有 "按下去 -> 慢慢消失" 的感覺
+            gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.6, audioCtx.currentTime + 0.05); // Attack
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.5); // Decay
+
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + 1.5);
+        }
+
+        // 處理觸控事件
+        function handleInput(e) {
+            // 阻止預設行為，避免選取文字或縮放
+            if(e.type !== 'mousedown') e.preventDefault(); 
+            
+            // 處理多點觸控
+            const touches = e.changedTouches || [{ target: e.target }];
+
+            for (let i = 0; i < touches.length; i++) {
+                const target = document.elementFromPoint(touches[i].clientX, touches[i].clientY);
+                // 檢查是否點擊到琴鍵 (或琴鍵內的文字)
+                const key = target ? target.closest('.key') : null;
+
+                if (key) {
+                    // 視覺回饋
+                    key.classList.add('active');
+                    setTimeout(() => key.classList.remove('active'), 200);
+
+                    // 聽覺回饋
+                    const freq = key.getAttribute('data-freq');
+                    playTone(parseFloat(freq));
+                }
+            }
+        }
+
+        // 綁定事件
+        const keys = document.querySelectorAll('.key');
+        const container = document.getElementById('piano-container');
+
+        // 使用 touchstart 支援 iPad 多點觸控
+        container.addEventListener('touchstart', handleInput, { passive: false });
+        // 為了方便電腦測試，保留 mousedown
+        container.addEventListener('mousedown', handleInput);
+
+        // 啟動按鈕邏輯
+        document.getElementById('start-btn').addEventListener('click', () => {
+            audioCtx = new AudioContext();
+            // 播放一個無聲的音來 "解鎖" iOS 的音頻引擎
+            const buffer = audioCtx.createBuffer(1, 1, 22050);
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+            source.start(0);
+
+            document.getElementById('start-overlay').style.display = 'none';
+        });
+
+    </script>
+</body>
+</html>
