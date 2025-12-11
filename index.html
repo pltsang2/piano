@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>輕量流暢版電子琴</title>
+    <title>除錯診斷版電子琴</title>
     <style>
         body { margin: 0; background: #222; overflow: hidden; font-family: "Microsoft JhengHei", sans-serif; }
         
@@ -17,7 +17,7 @@
         .key span { font-size: 1.5rem; color: rgba(255,255,255,0.5); pointer-events: none; margin-bottom: 5px; }
         .key-note { font-size: 2.5rem !important; color: #FFF !important; text-shadow: 0 0 5px black; }
 
-        /* 高對比配色 */
+        /* 彩虹配色 */
         .key:nth-child(1) { background: #FF0000; }
         .key:nth-child(2) { background: #FF8800; }
         .key:nth-child(3) { background: #FFFF00; }
@@ -32,67 +32,64 @@
         /* 游標 */
         #cursor {
             position: absolute; top: 50%; left: 50%;
-            width: 40px; height: 40px;
-            background: #00FF00; border: 3px solid #fff; border-radius: 50%;
+            width: 50px; height: 50px;
+            background: #00FF00; border: 4px solid #fff; border-radius: 50%;
             transform: translate(-50%, -50%); z-index: 50;
-            box-shadow: 0 0 15px #00FF00;
-            transition: left 0.05s linear; /* 反應更快 */
+            box-shadow: 0 0 20px #00FF00;
             display: flex; justify-content: center; align-items: center;
-            font-weight: bold; color: red; font-size: 24px;
+            font-size: 12px; color: black; font-weight: bold;
         }
-        
-        /* 當不專注時 */
-        #cursor.locked { 
-            background: #555 !important; 
-            box-shadow: none; 
-            border-color: #999;
-            width: 30px; height: 30px;
+
+        /* 診斷視窗 (加大一點方便看) */
+        #debug-container {
+            position: absolute; bottom: 20px; right: 20px;
+            width: 200px; height: 150px; 
+            border: 3px solid #fff; z-index: 90; background: #000;
+        }
+        #cam-preview {
+            width: 100%; height: 100%; 
+            transform: scaleX(-1); /* 鏡像 */
+            object-fit: cover;
+        }
+        /* 畫在臉上的紅點 Canvas */
+        #face-canvas {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            transform: scaleX(-1); /* 也要鏡像 */
+            pointer-events: none;
         }
 
         /* 控制面板 */
         #panel {
             position: absolute; bottom: 20px; left: 20px; 
-            background: rgba(0,0,0,0.8); color: white; padding: 15px;
-            border-radius: 10px; z-index: 100; width: 250px;
+            background: rgba(0,0,0,0.9); color: white; padding: 15px;
+            border-radius: 10px; z-index: 100; width: 220px;
         }
-        button { padding: 10px; width: 100%; font-size: 1.1rem; background: #FFD700; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 5px;}
-        .reset-btn { background: #FF4444; color: white; margin-top: 10px; }
+        button { padding: 12px; width: 100%; font-size: 1.1rem; background: #FFD700; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 10px; font-weight: bold;}
         
-        label { display: block; margin: 8px 0 2px; font-size: 0.9rem;}
+        #status-text { color: yellow; font-size: 14px; margin-bottom: 10px; text-align: center;}
+        
+        label { display: block; font-size: 0.9rem; margin-top: 5px;}
         input[type=range] { width: 100%; }
-
-        /* 預覽視窗 (縮小以省效能) */
-        #cam-preview {
-            position: absolute; bottom: 20px; right: 20px;
-            width: 120px; height: 90px; background: #000; 
-            border: 2px solid #fff; transform: scaleX(-1); opacity: 0.8; z-index: 90;
-        }
-        #status-light {
-            position: absolute; bottom: 115px; right: 20px;
-            font-size: 14px; font-weight: bold; color: #00FF00;
-            background: rgba(0,0,0,0.5); padding: 2px 5px; z-index: 91;
-        }
     </style>
 </head>
 <body>
 
     <div id="panel">
-        <button id="startBtn" onclick="init()">🚀 啟動 (輕量版)</button>
-        <button class="reset-btn" onclick="location.reload()">🔄 卡住請點我重置</button>
+        <div id="status-text">請點擊啟動</div>
+        <button id="startBtn" onclick="init()">🚀 啟動相機</button>
+        <button onclick="location.reload()" style="background:#FF4444; color:white;">🔄 重新整理</button>
         
-        <hr style="border-color:#555">
-        
-        <label>🧐 嚴格度 (要看多正?): <span id="val-strict">0.6</span></label>
-        <input type="range" id="strictness" min="0.1" max="1.0" step="0.1" value="0.6">
-        
-        <label>🎹 靈敏度 (頭轉多快?): <span id="val-sens">3.0</span></label>
-        <input type="range" id="sensitivity" min="1" max="6" step="0.1" value="3.0">
+        <label>靈敏度 (Sensitivity): <span id="val-sens">4.0</span></label>
+        <input type="range" id="sensitivity" min="1" max="8" step="0.5" value="4.0">
     </div>
 
-    <div id="status-light">待機中</div>
-    <video id="cam-preview" autoplay playsinline muted></video>
-    
-    <div id="cursor" class="locked"></div>
+    <div id="debug-container">
+        <video id="cam-preview" autoplay playsinline muted></video>
+        <canvas id="face-canvas"></canvas>
+    </div>
+
+    <div id="cursor"></div>
 
     <div id="piano">
         <div class="key" data-f="261.63"><span class="key-note">Do</span><span>C4</span></div>
@@ -111,38 +108,38 @@
     <script>
         const video = document.getElementById('hidden-video');
         const preview = document.getElementById('cam-preview');
+        const faceCanvas = document.getElementById('face-canvas');
+        const faceCtx = faceCanvas.getContext('2d');
         const cursor = document.getElementById('cursor');
-        const statusLight = document.getElementById('status-light');
+        const statusText = document.getElementById('status-text');
+        const startBtn = document.getElementById('startBtn');
         let audioCtx;
 
-        // 參數預設值
-        let sensitivity = 3.0; // 稍微調高靈敏度，讓操作更輕鬆
-        let strictness = 0.6; 
+        let sensitivity = 4.0; // 預設很高，讓它容易動
         let currentX = window.innerWidth / 2;
         let targetX = window.innerWidth / 2;
-        let isFocused = false;
+        
+        // 為了避免卡住，我們不使用複雜的眼動或轉頭過濾，回歸最原始的「鼻尖位置」
+        // 只要有臉，就會動
 
         document.getElementById('sensitivity').oninput = (e) => {
             sensitivity = parseFloat(e.target.value);
             document.getElementById('val-sens').innerText = sensitivity;
         };
-        document.getElementById('strictness').oninput = (e) => {
-            strictness = parseFloat(e.target.value);
-            document.getElementById('val-strict').innerText = strictness;
-        };
 
         async function init() {
-            document.getElementById('startBtn').disabled = true;
-            statusLight.innerText = "載入中...";
+            startBtn.disabled = true;
+            statusText.innerText = "載入模型中...";
             
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            // 播放靜音解鎖 iOS
             const b = audioCtx.createBuffer(1, 1, 22050);
             const s = audioCtx.createBufferSource(); s.buffer = b; s.connect(audioCtx.destination); s.start(0);
 
             try {
-                // ⚠️ 關鍵優化：將解析度降到 320x240，大幅減少卡頓
+                // 使用標準解析度 640x480，避免 320x240 在某些設備對應錯誤
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { width: 320, height: 240, facingMode: "user" } 
+                    video: { width: 640, height: 480, facingMode: "user" } 
                 });
                 video.srcObject = stream;
                 preview.srcObject = stream;
@@ -151,7 +148,7 @@
                 
                 faceMesh.setOptions({
                     maxNumFaces: 1,
-                    refineLandmarks: false, // ⚠️ 關閉虹膜偵測，這是一切卡頓的元兇
+                    refineLandmarks: false,
                     minDetectionConfidence: 0.5,
                     minTrackingConfidence: 0.5
                 });
@@ -159,93 +156,76 @@
                 faceMesh.onResults(onResults);
 
                 video.onloadeddata = () => {
+                    // 設定 Canvas 大小與 Video 一致
+                    faceCanvas.width = video.videoWidth;
+                    faceCanvas.height = video.videoHeight;
+
                     const loop = async () => { 
-                        if (video.paused || video.ended) return;
-                        await faceMesh.send({image: video}); 
-                        requestAnimationFrame(loop); 
+                        if(!video.paused && !video.ended) {
+                            await faceMesh.send({image: video}); 
+                            requestAnimationFrame(loop); 
+                        }
                     };
                     loop();
-                    statusLight.innerText = "運作中";
-                    document.getElementById('startBtn').style.display = 'none';
+                    statusText.innerText = "🟢 系統運作中";
+                    statusText.style.color = "#00FF00";
+                    startBtn.style.display = 'none';
                 };
             } catch (e) { 
-                alert("錯誤：" + e); 
-                document.getElementById('startBtn').disabled = false;
+                alert("相機啟動失敗: " + e); 
+                statusText.innerText = "❌ 失敗: " + e;
+                startBtn.disabled = false;
             }
         }
 
         function onResults(results) {
+            // 清除畫布
+            faceCtx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
+
             if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
                 const mesh = results.multiFaceLandmarks[0];
-                
-                // 1. 取得關鍵點 (鼻尖, 左臉緣, 右臉緣)
                 const nose = mesh[1]; 
-                const leftFace = mesh[234];
-                const rightFace = mesh[454];
 
-                // 2. 計算轉向 (Yaw) - 利用鼻子與臉頰的距離比
-                const distL = Math.abs(nose.x - leftFace.x);
-                const distR = Math.abs(nose.x - rightFace.x);
+                // --- 診斷功能：在臉上畫紅點 ---
+                // 這是為了讓老師知道「電腦有沒有看到鼻子」
+                // 如果您在右下角看到紅點，但游標不動，那是靈敏度問題
+                // 如果您沒看到紅點，那是光線問題
+                const x = nose.x * faceCanvas.width;
+                const y = nose.y * faceCanvas.height;
                 
-                // 計算偏離中心的程度 (0 = 正中, 數值越大越偏)
-                const balance = Math.abs(distL - distR);
-                const faceWidth = distL + distR;
-                const turnRatio = balance / faceWidth; 
-
-                // 3. 判斷是否專注 (嚴格度過濾)
-                // 這裡的 strictness 邏輯：如果轉頭太過分，就鎖住
-                // 但我們保留一點彈性，讓游標移動時不會一直斷斷續續
+                faceCtx.beginPath();
+                faceCtx.arc(x, y, 10, 0, 2 * Math.PI); // 畫一個半徑10的圓
+                faceCtx.fillStyle = "red";
+                faceCtx.fill();
                 
-                // 嚴格度閾值：strictness 越小，容忍度越低
-                // 我們反轉一下邏輯讓 UI 比較好懂： 
-                // UI 0.1 (嚴格) -> 容許 turnRatio < 0.1
-                // UI 1.0 (寬鬆) -> 容許 turnRatio < 0.5
+                // --- 計算游標位置 ---
+                // 邏輯：(1 - nose.x) 是因為鏡像
+                // 中心點修正：(原始值 - 0.5) * 靈敏度 + 0.5
+                let rawX = 1 - nose.x; 
+                let adjustedX = (rawX - 0.5) * sensitivity + 0.5;
+
+                // 轉換成螢幕像素
+                targetX = adjustedX * window.innerWidth;
+
+                // 限制不要跑出螢幕外
+                if (targetX < 0) targetX = 0;
+                if (targetX > window.innerWidth) targetX = window.innerWidth;
                 
-                const threshold = strictness * 0.5;
-
-                // 這裡做一個「緩衝區」，如果是明顯的大轉頭才鎖住
-                // 為了讓體驗好一點，我們主要用這來過濾「看旁邊」
-                if (turnRatio < 0.2 + (strictness * 0.3)) { 
-                    isFocused = true;
-                    cursor.classList.remove('locked');
-                    cursor.innerText = "";
-                    statusLight.innerText = "🟢 鎖定中";
-                    statusLight.style.color = "#00FF00";
-                } else {
-                    // 如果轉頭角度太大（看旁邊）
-                    isFocused = false;
-                    cursor.classList.add('locked');
-                    cursor.innerText = "❌";
-                    statusLight.innerText = "🔴 請看螢幕";
-                    statusLight.style.color = "red";
-                }
-
-                // 4. 計算游標位置
-                // 使用鼻尖座標控制
-                let rawX = (1 - nose.x) * window.innerWidth;
-                let centerX = window.innerWidth / 2;
-                let adjustedX = centerX + (rawX - centerX) * sensitivity;
-
-                if (adjustedX < 0) adjustedX = 0;
-                if (adjustedX > window.innerWidth) adjustedX = window.innerWidth;
-
-                targetX = adjustedX;
-
+                cursor.style.borderColor = "white"; // 正常顏色
+                cursor.innerText = "";
             } else {
-                statusLight.innerText = "未偵測到人臉";
-                isFocused = false;
+                // 沒抓到臉
+                statusText.innerText = "⚠️ 沒看到臉";
+                statusText.style.color = "yellow";
+                cursor.style.borderColor = "red"; // 警告色
+                cursor.innerText = "?";
             }
 
-            // 平滑移動 (數值越小越黏，越大越快)
-            currentX = currentX * 0.8 + targetX * 0.2;
+            // 平滑移動
+            currentX = currentX * 0.9 + targetX * 0.1;
             cursor.style.left = currentX + 'px';
 
-            if (isFocused) {
-                checkCollision(currentX);
-            } else {
-                if (lastKey) lastKey.classList.remove('active');
-                lastKey = null;
-            }
+            checkCollision(currentX);
         }
 
         let lastKey = null;
@@ -263,11 +243,8 @@
 
                 if (key) {
                     key.classList.add('active');
-                    // 停留 50ms 就發聲 (反應調快一點)
                     playTimer = setTimeout(() => {
-                        if (isFocused) { 
-                            playNote(parseFloat(key.dataset.f));
-                        }
+                        playNote(parseFloat(key.dataset.f));
                     }, 50);
                 }
             }
@@ -277,26 +254,18 @@
             if(!audioCtx) return;
             const osc = audioCtx.createOscillator();
             const g = audioCtx.createGain();
-            
-            // 使用鋸齒波 (Sawtooth) 聲音比較明顯
             osc.type = 'sawtooth';
             osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
             
-            // 濾波器讓聲音不刺耳
             const filter = audioCtx.createBiquadFilter();
-            filter.type = "lowpass";
-            filter.frequency.value = 1000;
+            filter.type = "lowpass"; filter.frequency.value = 1500;
 
             g.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            g.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime + 0.05);
+            g.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.05);
             g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.0);
             
-            osc.connect(filter);
-            filter.connect(g);
-            g.connect(audioCtx.destination);
-            
-            osc.start();
-            osc.stop(audioCtx.currentTime + 1.0);
+            osc.connect(filter); filter.connect(g); g.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + 1.0);
         }
     </script>
 </body>
